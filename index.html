@@ -432,19 +432,15 @@
 
     .quran-word.point {
       background: #BBDEFB !important; /* Blue: Pointer / Focus */
-      box-shadow: 0 0 0 2px #64B5F6;
     }
     .quran-word.mistake {
       background: #FFCDD2 !important; /* Red: Mistake */
-      box-shadow: 0 0 0 2px #E57373;
     }
     .quran-word.ghunnah {
       background: #C8E6C9 !important; /* Green: Ghunnah / Ikhfa */
-      box-shadow: 0 0 0 2px #81C784;
     }
     .quran-word.madd {
       background: #FFE0B2 !important; /* Orange: Madd / Prolongation */
-      box-shadow: 0 0 0 2px #FFB74D;
     }
 
     /* Teacher Color Selection Toolbar */
@@ -489,7 +485,7 @@
       border-radius: 50%;
       display: inline-block;
     }
-    .quran-word.good { background: #C8E6C9 !important; box-shadow: 0 0 0 2px #81C784; }
+    .quran-word.good { background: #C8E6C9 !important; }
     .quran-mark-legend span:nth-child(4) .quran-mark-dot { background:#8E24AA; box-shadow: 0 0 0 4px #E1BEE7; }
     .quran-mark-legend span:nth-child(5) .quran-mark-dot { background:#FB8C00; box-shadow: 0 0 0 4px #FFE0B2; }
 
@@ -604,7 +600,7 @@
     .teacher-bottom-dock { padding: 10px 14px; gap: 8px; }
     body.live-teacher #quran-page-container { padding-bottom: 135px; }
     #mushaf-btn.on { background: #1B5E3A !important; color: #fff !important; }
-    .quran-word.stumble { background: #E1BEE7 !important; box-shadow: 0 0 0 2px #BA68C8; }
+    .quran-word.stumble { background: #E1BEE7 !important; }
       /* ===== PHASE 7: PREMIUM "MUSHAF" UI REDESIGN ===== */
 
     /* 1. Islamic Geometric Background & Paper Texture */
@@ -2021,7 +2017,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
           words.forEach((w, i) => {
             const loc = `${ayah.number}-${i}`;
             const markType = marks[loc] || '';
-            html += `<span class="quran-word ${markType}" data-loc="${loc}">${tajweedHtml(w)}</span> `;
+            html += `<span class="quran-word ${markType}" data-loc="${loc}">${tajweedHtml(w)}&nbsp;</span>`;
           });
           html += `<span class="quran-ayah-end len${String(ayah.numberInSurah).length}"><span class="n">${toArabicDigits(ayah.numberInSurah)}</span></span> `;
         });
