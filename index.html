@@ -2017,7 +2017,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
           words.forEach((w, i) => {
             const loc = `${ayah.number}-${i}`;
             const markType = marks[loc] || '';
-            html += `<span class="quran-word ${markType}" data-loc="${loc}">${tajweedHtml(w)}&nbsp;</span>`;
+            html += `<span class="quran-word ${markType}" data-loc="${loc}">${tajweedHtml(w)} </span>`;
           });
           html += `<span class="quran-ayah-end len${String(ayah.numberInSurah).length}"><span class="n">${toArabicDigits(ayah.numberInSurah)}</span></span> `;
         });
