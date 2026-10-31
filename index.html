@@ -233,7 +233,7 @@
 
     .quran-page-nav { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .quran-page { background:#fffdf5; border:1px solid #ecdfb8; border-radius:10px; padding:18px 14px; direction:rtl; text-align:justify; text-align-last:right; word-spacing:0; font-family:var(--font-arabic); font-size:1.65rem; line-height:1.75; box-shadow: 0 2px 4px rgba(0,0,0,0.04), 0 10px 24px rgba(163,130,50,0.12), inset 0 0 0 6px #fffef9; }
-    .quran-word { display:inline; border-radius:6px; cursor:pointer; }
+    .quran-word { display:inline; border-radius:6px; cursor:pointer; padding:6px 2px; margin:-6px -2px; }
     .quran-word.point { background:#BBDEFB; }
     .quran-word.mistake { background:#FFCDD2; }
     .quran-word.good { background:#C8E6C9; }
@@ -428,6 +428,8 @@
       cursor: pointer;
       border-radius: 6px;
       transition: background-color 0.15s ease;
+      padding: 6px 2px;
+      margin: -6px -2px;
     }
 
     .quran-word.point {
