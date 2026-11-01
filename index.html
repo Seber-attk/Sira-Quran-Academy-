@@ -2436,7 +2436,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
             return `<div class="q-admin-item"><span>${s.email}</span><span style="color:#888; font-size:0.8rem;">${dateStr}</span><button class="btn btn-sm" onclick="teacherStartSession('${s.uid}', '${(s.email || '').replace(/'/g, "\\'")}')">🕌 ቀጥታ ክፍል ጀምር</button></div>`;
           }).join('');
         } else {
-          const teacherOptions = ['', ...fb.TEACHER_EMAILS, ...fb.ADMIN_EMAILS].filter((v, i, a) => a.indexOf(v) === i);
+          const teacherOptions = ['', ...(appData.teacherEmails || []), ...fb.TEACHER_EMAILS, ...fb.ADMIN_EMAILS].filter((v, i, a) => a.indexOf(v) === i);
           container.innerHTML = list.map(s => {
             const dateStr = s.allCompletedAt ? new Date(s.allCompletedAt).toLocaleString() : '';
             const opts = teacherOptions.map(t => `<option value="${t}" ${(s.assignedTeacher || '') === t ? 'selected' : ''}>${t || '— Unassigned —'}</option>`).join('');
