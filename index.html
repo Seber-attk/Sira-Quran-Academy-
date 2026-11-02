@@ -1911,8 +1911,23 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
       showView(isAdmin ? 'admin-view' : (isTeacher ? 'teacher-view' : 'student-home'));
     }
 
-    async function endLiveSession() {
-      if (!confirm('ክፍለ ትምህርቱን ለዘላለም መዝጋት ይፈልጋሉ?')) return;
+    function endLiveSession() {
+      if (document.getElementById('end-session-modal')) return;
+      const m = document.createElement('div');
+      m.className = 'modal-back';
+      m.id = 'end-session-modal';
+      m.innerHTML = `<div class="modal-card">
+        <div style="font-size:2.5rem;">🕌</div>
+        <h3 style="margin:8px 0;">ክፍለ ትምህርቱን ለዘላለም መዝጋት ይፈልጋሉ?</h3>
+        <button class="btn" style="width:100%; margin-bottom:8px; background:#c62828;" onclick="confirmEndLiveSession()">አዎ፣ ዝጋ</button>
+        <button class="btn btn-secondary" style="width:100%;" onclick="document.getElementById('end-session-modal').remove()">ይቅር</button>
+      </div>`;
+      document.body.appendChild(m);
+    }
+
+    async function confirmEndLiveSession() {
+      const modal = document.getElementById('end-session-modal');
+      if (modal) modal.remove();
       await fb.setDoc(fb.doc(fb.db, 'liveSessions', liveSessionState.studentUid), { active: false }, { merge: true });
       leaveLiveQuranView();
     }
