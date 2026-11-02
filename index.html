@@ -1829,21 +1829,29 @@
 
     async function teacherStartSession(studentUid, studentEmail) {
       try {
+        const studentSnap = await fb.getDoc(fb.doc(fb.db, 'users', studentUid));
         if (!isAdmin) {
-          const studentSnap = await fb.getDoc(fb.doc(fb.db, 'users', studentUid));
           const assigned = (studentSnap.exists() && studentSnap.data().assignedTeacher || '').toLowerCase();
           if (assigned !== (currentUser.email || '').toLowerCase()) {
             alert('This student is not assigned to you. Ask the admin to assign them first.');
             return;
           }
         }
+        // Resume from wherever this student last left off, instead of always starting at page 1.
+        const resumePage = (studentSnap.exists() && studentSnap.data().lastQuranPage) || 1;
         await fb.setDoc(fb.doc(fb.db, 'liveSessions', studentUid), {
-          active: true, teacherEmail: currentUser.email, studentEmail, page: 1, marks: {}, startedAt: Date.now()
+          active: true, teacherEmail: currentUser.email, studentEmail, page: resumePage, marks: {}, startedAt: Date.now()
         });
         openLiveQuranView(studentUid, true, studentEmail);
       } catch (e) {
         alert('Could not start session: ' + (e && e.message ? e.message : e));
       }
+    }
+
+    // Remembers the page a student was on, so their next live session resumes there automatically.
+    function saveStudentLastPage(studentUid, page) {
+      if (!studentUid || !page) return;
+      fb.setDoc(fb.doc(fb.db, 'users', studentUid), { lastQuranPage: page }, { merge: true }).catch(e => console.warn('Could not save last page:', e));
     }
 
     function openLiveQuranView(studentUid, isTeacher, studentEmail) {
@@ -1977,10 +1985,30 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
     const toArabicDigits = (n) => String(n).replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
 
     // NEW: Allows teacher to jump by Page OR by Surah
-    async function promptPageChange() {
+    function promptPageChange() {
       if (!liveSessionState.isTeacher) return;
-      const input = prompt("ወደ የትኛው ገጽ ወይም ሱራ መሄድ ይፈልጋሉ?\n\n- ገጽ ቁጥር ብቻ ይጻፉ (ለምሳሌ: 45)\n- ወይም ለሱራ 's' ብለው ቁጥሩን ይጻፉ (ለምሳሌ ሱራ አል-ካህፍ: s18)", liveSessionState.page);
-      if (!input) return;
+      if (document.getElementById('page-jump-modal')) return;
+      const m = document.createElement('div');
+      m.className = 'modal-back';
+      m.id = 'page-jump-modal';
+      m.innerHTML = `<div class="modal-card">
+        <div style="font-size:2rem;">📖</div>
+        <h3 style="margin:8px 0;">ወደ የትኛው ገጽ ወይም ሱራ መሄድ ይፈልጋሉ?</h3>
+        <p style="color:#666; font-size:0.85rem; text-align:right;">- ገጽ ቁጥር ብቻ ይጻፉ (ለምሳሌ: 45)<br>- ወይም ለሱራ 's' ብለው ቁጥሩን ይጻፉ (ለምሳሌ ሱራ አል-ካህፍ: s18)</p>
+        <input type="text" id="page-jump-input" value="${liveSessionState.page}" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmPageJump();}" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ccc; text-align:center; font-size:1rem; margin:10px 0;">
+        <button class="btn" style="width:100%; margin-bottom:8px;" onclick="confirmPageJump()">ሂድ</button>
+        <button class="btn btn-secondary" style="width:100%;" onclick="document.getElementById('page-jump-modal').remove()">ይቅር</button>
+      </div>`;
+      document.body.appendChild(m);
+      setTimeout(() => { const el = document.getElementById('page-jump-input'); if (el) { el.focus(); el.select(); } }, 50);
+    }
+
+    async function confirmPageJump() {
+      const inputEl = document.getElementById('page-jump-input');
+      const input = inputEl ? inputEl.value : '';
+      const modal = document.getElementById('page-jump-modal');
+      if (!input || !input.trim()) { if (modal) modal.remove(); return; }
+      if (modal) modal.remove();
 
       let targetPage = null;
       const trimmed = input.trim();
@@ -1995,7 +2023,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
               targetPage = json.data.ayahs[0].page;
             }
           } catch (e) {
-            alert("የሱራ መረጃ ማምጣት አልተቻለም — እባክዎ ኢንተርኔት ያረጋግጡ።");
+            showInfoToast('⚠️', 'ስህተት', 'የሱራ መረጃ ማምጣት አልተቻለም — እባክዎ ኢንተርኔት ያረጋግጡ።');
             return;
           }
         }
@@ -2008,8 +2036,9 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
 
       if (targetPage) {
         fb.setDoc(fb.doc(fb.db, 'liveSessions', liveSessionState.studentUid), { page: targetPage, marks: {}, drawings: [] }, { mergeFields: ['page', 'marks', 'drawings'] });
+        saveStudentLastPage(liveSessionState.studentUid, targetPage);
       } else {
-        alert("እባክዎ ከ 1 እስከ 604 ያለ ትክክለኛ ገጽ ወይም ከ s1 እስከ s114 ያለ ሱራ ያስገቡ።");
+        showInfoToast('⚠️', 'ስህተት', 'እባክዎ ከ 1 እስከ 604 ያለ ትክክለኛ ገጽ ወይም ከ s1 እስከ s114 ያለ ሱራ ያስገቡ።');
       }
     }
 
@@ -2109,6 +2138,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
       if (!liveSessionState.isTeacher) return;
       const newPage = Math.min(604, Math.max(1, liveSessionState.page + delta));
       fb.setDoc(fb.doc(fb.db, 'liveSessions', liveSessionState.studentUid), { page: newPage, marks: {}, drawings: [] }, { mergeFields: ['page', 'marks', 'drawings'] });
+      saveStudentLastPage(liveSessionState.studentUid, newPage);
     }
 
     // Toggles between Text (for painting) and real-Mushaf page image
@@ -3815,7 +3845,9 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
         /youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/
       ];
       for (const p of patterns) { const m = url.match(p); if (m) { id = m[1]; break; } }
-      return id ? `https://www.youtube.com/embed/${id}` : null;
+      // rel=0 limits "up next" suggestions to the same channel instead of any YouTube video;
+      // modestbranding/playsinline keep it looking clean on mobile.
+      return id ? `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1` : null;
     }
 
     function showLevelVideo(levelId) {
