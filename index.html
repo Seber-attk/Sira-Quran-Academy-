@@ -1245,6 +1245,37 @@
         </div>
 
         <div class="admin-card">
+          <h3>⚡ Bulk Add Questions (fast — one save for all of them, no images/audio)</h3>
+          <p style="color:#666; font-size:0.85rem; margin-top:-4px;">Uses whichever lesson is picked in the "Select Lesson" box above. One question per line:</p>
+          <p style="color:#666; font-size:0.8rem; background:#f5f5f5; padding:8px; border-radius:8px; font-family:monospace; white-space:pre-wrap; overflow-wrap:anywhere;">ሀ | ሀ | ሀ, ለ, ሐ, መ
+ለ | ለ | ሀ, ለ, ሐ, መ</p>
+          <small style="color:#999; display:block; margin-bottom:8px;">Format: <code>Symbol | Correct Answer | Choices (comma separated)</code>. For a <strong>Matching</strong> lesson, drop the choices — just <code>Symbol | Correct</code> per line.</small>
+          <div class="form-group">
+            <textarea id="bulk-questions-text" rows="8" style="width:100%; font-family:monospace; box-sizing:border-box;" placeholder="ሀ | ሀ | ሀ, ለ, ሐ, መ"></textarea>
+          </div>
+          <button class="btn" onclick="bulkAddQuestions()">⚡ Add All to Lesson</button>
+        </div>
+
+        <div class="admin-card">
+          <h3>📥 Import Lesson File (with images & audio)</h3>
+          <p style="color:#666; font-size:0.85rem; margin-top:-4px;">Build the lesson offline with the separate Lesson Builder page (has image/audio upload, no login needed), export it there, then upload that file here. Uses whichever lesson is picked in "Select Lesson" above.</p>
+          <div class="form-group">
+            <input type="file" id="import-lesson-file" accept=".json">
+          </div>
+          <button class="btn" onclick="importLessonFile()">📥 Import into Lesson</button>
+        </div>
+
+        <div class="admin-card">
+          <h3>🧬 Restore Full Backup</h3>
+          <p style="color:#666; font-size:0.85rem; margin-top:-4px;">Use this after building or editing the whole course offline in the Course Builder page. This replaces your levels/lessons structure and every lesson's questions with what's in the file — don't use it for just one lesson, use "Import Lesson File" above for that.</p>
+          <div class="form-group">
+            <input type="file" id="restore-backup-file" accept=".json">
+          </div>
+          <div id="restore-backup-status" style="color:#666; font-size:0.85rem; margin-bottom:8px;"></div>
+          <button class="btn btn-danger" onclick="restoreFullBackup()">🧬 Restore Full Backup</button>
+        </div>
+
+        <div class="admin-card">
           <h3>Live Quran Class (unlocks after ALL levels are completed)</h3>
           <div class="form-group">
             <label>Schedule (shown to students as free text)</label>
@@ -4119,6 +4150,186 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
 
       const saved = await saveLessonQuestions(targetLesId, questions);
       if (saved) { resetQuestionForm(); renderAdminPanel(); }
+    }
+
+    // Adds many questions to one lesson in a single Firestore write, instead of
+    // one slow round-trip per question. No image/audio support here — add those
+    // individually afterwards via Edit if a specific question needs media.
+    async function bulkAddQuestions() {
+      const targetLesId = document.getElementById('question-lesson-select').value;
+      if (!targetLesId) return appAlert('Select a lesson first (use the "Select Lesson" box above).');
+      const targetMeta = findLessonMeta(targetLesId);
+      const isMatchingLesson = targetMeta && targetMeta.type === 'matching';
+
+      const raw = document.getElementById('bulk-questions-text').value;
+      const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+      if (lines.length === 0) return appAlert('Paste at least one question line first.');
+
+      const newQuestions = [];
+      const errors = [];
+      lines.forEach((line, i) => {
+        const parts = line.split('|').map(p => p.trim());
+        const symbol = parts[0] || '';
+        const correct = parts[1] || '';
+        const optionsRaw = parts[2] || '';
+        if (!correct) { errors.push(`Line ${i + 1}: missing the correct answer.`); return; }
+        let options = [];
+        if (isMatchingLesson) {
+          if (!symbol) { errors.push(`Line ${i + 1}: Matching lessons need a Symbol too (Symbol | Correct).`); return; }
+          options = [correct];
+        } else {
+          if (!optionsRaw) { errors.push(`Line ${i + 1}: missing answer choices.`); return; }
+          options = optionsRaw.split(',').map(s => s.trim()).filter(s => s !== '');
+          if (options.length < 2) { errors.push(`Line ${i + 1}: needs at least 2 answer choices.`); return; }
+          if (!options.some(o => o.toLowerCase() === correct.toLowerCase())) { errors.push(`Line ${i + 1}: correct answer "${correct}" doesn't exactly match any of its choices.`); return; }
+        }
+        newQuestions.push({ id: uid('q'), symbol, img: '', audio: '', options, correct, goodTime: 10 });
+      });
+
+      if (errors.length > 0) {
+        await appAlert('Please fix these lines and try again:\n\n' + errors.slice(0, 10).join('\n') + (errors.length > 10 ? `\n…and ${errors.length - 10} more.` : ''));
+        return;
+      }
+
+      if (!(await appConfirm(`Add ${newQuestions.length} question(s) to this lesson?`, 'Yes, add them', 'Cancel'))) return;
+
+      const existing = await fetchLessonQuestions(targetLesId);
+      const combined = existing.concat(newQuestions);
+      const saved = await saveLessonQuestions(targetLesId, combined);
+      if (saved) {
+        document.getElementById('bulk-questions-text').value = '';
+        await appAlert(`Added ${newQuestions.length} question(s)!`);
+        renderAdminPanel();
+      }
+    }
+
+    // Reads a .json file exported from the offline Lesson Builder page and merges
+    // its questions (images/audio included) into the selected lesson in one write.
+    async function importLessonFile() {
+      const targetLesId = document.getElementById('question-lesson-select').value;
+      if (!targetLesId) return appAlert('Select a lesson first (use the "Select Lesson" box above).');
+
+      const fileInput = document.getElementById('import-lesson-file');
+      const file = fileInput.files[0];
+      if (!file) return appAlert('Choose a lesson file to import first.');
+
+      let data;
+      try {
+        const text = await file.text();
+        data = JSON.parse(text);
+      } catch (e) {
+        return appAlert("Couldn't read that file — make sure it's a lesson file exported from the Lesson Builder page.");
+      }
+      if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
+        return appAlert('That file has no questions in it.');
+      }
+
+      const targetMeta = findLessonMeta(targetLesId);
+      const isMatchingLesson = targetMeta && targetMeta.type === 'matching';
+      if (data.lessonType && ((data.lessonType === 'matching') !== !!isMatchingLesson)) {
+        const proceed = await appConfirm(`This file was built as a "${data.lessonType}" lesson, but the selected lesson is "${isMatchingLesson ? 'matching' : 'quiz'}". Import anyway?`, 'Import anyway', 'Cancel');
+        if (!proceed) return;
+      }
+
+      // Fresh ids avoid collisions with anything already in the lesson.
+      const newQuestions = data.questions.map(q => ({
+        id: uid('q'),
+        symbol: q.symbol || '',
+        img: q.img || '',
+        audio: q.audio || '',
+        options: Array.isArray(q.options) && q.options.length ? q.options : [q.correct],
+        correct: q.correct || '',
+        goodTime: q.goodTime || 10
+      }));
+
+      if (!(await appConfirm(`Import ${newQuestions.length} question(s) into this lesson?`, 'Yes, import', 'Cancel'))) return;
+
+      const existing = await fetchLessonQuestions(targetLesId);
+      const combined = existing.concat(newQuestions);
+      const saved = await saveLessonQuestions(targetLesId, combined);
+      if (saved) {
+        fileInput.value = '';
+        await appAlert(`Imported ${newQuestions.length} question(s)!`);
+        renderAdminPanel();
+      }
+    }
+
+    // Replaces the whole course structure (levels/lessons) and every lesson's
+    // questions with what's in a full backup file (from the app's own "Download Backup"
+    // button or exported from the offline Course Builder page). Writes each lesson's
+    // questions as its own Firestore doc, same as the app always has, so one giant
+    // oversized lesson can't block the rest of the course from restoring.
+    async function restoreFullBackup() {
+      if (!isAdmin) return;
+      const fileInput = document.getElementById('restore-backup-file');
+      const statusEl = document.getElementById('restore-backup-status');
+      const file = fileInput.files[0];
+      if (!file) return appAlert('Choose a backup file to restore first.');
+
+      let data;
+      try {
+        const text = await file.text();
+        data = JSON.parse(text);
+      } catch (e) {
+        return appAlert("Couldn't read that file — make sure it's a backup file (.json) from the app or the Course Builder page.");
+      }
+      if (!data || !Array.isArray(data.levels)) {
+        return appAlert('That file has no levels in it — this needs a full backup file, not a single-lesson file.');
+      }
+
+      let totalLessons = 0, totalQuestions = 0;
+      data.levels.forEach(l => (l.lessons || []).forEach(les => { totalLessons++; totalQuestions += (les.questions || []).length; }));
+
+      if (!(await appConfirm(
+        `This replaces your ENTIRE course: ${data.levels.length} level(s), ${totalLessons} lesson(s), ${totalQuestions} question(s) total.\n\nAnything currently in the app that isn't in this file will be gone. Continue?`,
+        'Yes, restore it', 'Cancel'
+      ))) return;
+
+      statusEl.innerText = 'Saving course structure…';
+      appData.levels = data.levels.map(l => ({
+        id: l.id || uid('lvl'),
+        name: l.name || 'Untitled Level',
+        videoUrl: l.videoUrl || '',
+        lessons: (l.lessons || []).map(les => ({
+          id: les.id || uid('les'),
+          title: les.title || 'Untitled Lesson',
+          type: les.type || 'quiz',
+          isCheckpoint: !!les.isCheckpoint,
+          passThreshold: les.passThreshold || (les.type === 'placement' ? 90 : 85),
+          shuffleQuestions: les.shuffleQuestions !== false
+        }))
+      }));
+      await saveIndex();
+
+      let done = 0, failed = [];
+      for (const l of data.levels) {
+        for (const les of (l.lessons || [])) {
+          const lesId = les.id;
+          const questions = les.questions || [];
+          statusEl.innerText = `Saving questions… (${++done}/${totalLessons}) ${les.title || ''}`;
+          const bytes = new Blob([JSON.stringify(questions)]).size;
+          if (bytes > MAX_DOC_BYTES) {
+            failed.push(`${les.title || lesId} (${Math.round(bytes / 1024)}KB — too large, skipped)`);
+            continue;
+          }
+          try {
+            await fb.setDoc(fb.doc(fb.db, 'content', 'main', 'lessons', lesId), { questions });
+            lessonQuestionsCache[lesId] = questions;
+          } catch (e) {
+            failed.push(`${les.title || lesId} (${e && e.message ? e.message : 'save failed'})`);
+          }
+        }
+      }
+
+      statusEl.innerText = '';
+      fileInput.value = '';
+      renderAdminPanel();
+
+      if (failed.length === 0) {
+        await appAlert(`Restored! ${data.levels.length} level(s), ${totalLessons} lesson(s), ${totalQuestions} question(s).`);
+      } else {
+        await appAlert(`Restored, but ${failed.length} lesson(s) had a problem:\n\n` + failed.slice(0, 8).join('\n') + (failed.length > 8 ? `\n…and ${failed.length - 8} more.` : ''));
+      }
     }
 
     function removeQuestionAudio() {
