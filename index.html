@@ -978,7 +978,7 @@
 <details class="extra-card" style="cursor:pointer;"><summary style="font-weight:800;">መለያዬን እንዴት እሰርዛለሁ?</summary><p style="margin-top:8px;">መለያ ትር ታች ላይ «መለያዬን ሰርዝ» ን ይጫኑ። እድገትዎ በሙሉ ይጠፋል።</p></details>
         <div class="extra-card"><h3>መልስ አላገኙም?</h3><p>ኢሜይል ይላኩልን — siraquranacademy@gmail.com</p>
           <button class="btn" onclick="contactSupport()">✉️ ድጋፍ ያግኙ</button>
-          <button class="btn btn-outline" style="margin-top:8px;" onclick="navigator.clipboard&&navigator.clipboard.writeText('siraquranacademy@gmail.com').then(()=>alert('ኢሜይሉ ተቀድቷል'))">📋 ኢሜይል ቅዳ</button></div>
+          <button class="btn btn-outline" style="margin-top:8px;" onclick="navigator.clipboard&&navigator.clipboard.writeText('siraquranacademy@gmail.com').then(()=>showInfoToast('📋','ተቀድቷል','ኢሜይሉ ተቀድቷል'))">📋 ኢሜይል ቅዳ</button></div>
       </div>
       <div id="account-view" class="view">
         <div class="extra-card" id="reminder-card">
@@ -1516,8 +1516,8 @@
 
     async function deleteMyAccount() {
       const u = fb.auth.currentUser; if (!u) return;
-      if (!confirm('መለያዎን እና ሁሉንም እድገትዎን ለዘላለም መሰረዝ ይፈልጋሉ? ይህ ሊመለስ አይችልም።')) return;
-      const pw = prompt('ለማረጋገጥ የይለፍ ቃልዎን ያስገቡ፦'); if (!pw) return;
+      if (!(await appConfirm('መለያዎን እና ሁሉንም እድገትዎን ለዘላለም መሰረዝ ይፈልጋሉ? ይህ ሊመለስ አይችልም።', 'አዎ፣ ሰርዝ', 'ይቅር'))) return;
+      const pw = await appPrompt('ለማረጋገጥ የይለፍ ቃልዎን ያስገቡ፦'); if (!pw) return;
       try {
         await fb.reauthenticateWithCredential(u, fb.EmailAuthProvider.credential(u.email, pw));
         if (unsubUser) { unsubUser(); unsubUser = null; }
@@ -1525,9 +1525,9 @@
         try { await fb.deleteDoc(fb.doc(fb.db, 'liveSessions', u.uid)); } catch (e) {}
         await fb.deleteUser(u);
         try { localStorage.clear(); } catch (e) {}
-        alert('መለያዎ ተሰርዟል።'); location.reload();
+        await appAlert('መለያዎ ተሰርዟል።'); location.reload();
       } catch (e) {
-        alert((e.code && friendlyAuthError(e.code)) || 'መሰረዝ አልተሳካም። እባክዎ እንደገና ይሞክሩ ወይም ድጋፍ ያግኙ።');
+        await appAlert((e.code && friendlyAuthError(e.code)) || 'መሰረዝ አልተሳካም። እባክዎ እንደገና ይሞክሩ ወይም ድጋፍ ያግኙ።');
       }
     }
 
@@ -1669,11 +1669,11 @@
         const active = snap.exists() && snap.data().active;
         banner.style.display = active ? 'block' : 'none';
         if (!active && liveSessionState.studentUid === user.uid && document.getElementById('live-quran-view').classList.contains('active')) {
-          alert('ክፍለ ትምህርቱ ተጠናቅቋል።');
+          appAlert('ክፍለ ትምህርቱ ተጠናቅቋል።');
           showView('student-home');
         }
       }, (err) => {
-        alert('Live session check failed: ' + (err && err.message ? err.message : err));
+        appAlert('Live session check failed: ' + (err && err.message ? err.message : err));
       });
     }
 
@@ -1685,7 +1685,7 @@
       try {
         await fb.setDoc(fb.doc(fb.db, 'users', studentUid), { assignedTeacher: teacherEmail }, { merge: true });
       } catch (e) {
-        alert('Could not assign teacher: ' + (e && e.message ? e.message : e));
+        appAlert('Could not assign teacher: ' + (e && e.message ? e.message : e));
       }
     }
 
@@ -1709,6 +1709,60 @@
       document.body.appendChild(toast);
       setTimeout(() => toast.classList.add('out'), 3000);
       setTimeout(() => toast.remove(), 3500);
+    }
+
+    // --- In-app replacements for the native alert()/confirm()/prompt() browser dialogs,
+    // so nothing shows "seber-attk.github.io says" to the person using the app. ---
+    function appAlert(message, title) {
+      return new Promise(resolve => {
+        const m = document.createElement('div');
+        m.className = 'modal-back';
+        m.innerHTML = `<div class="modal-card">
+          ${title ? `<h3 style="margin:8px 0;">${escHtml(title)}</h3>` : ''}
+          <p style="white-space:pre-wrap; color:#444; text-align:center;">${escHtml(message)}</p>
+          <button class="btn" style="width:100%; margin-top:8px;">OK</button>
+        </div>`;
+        document.body.appendChild(m);
+        const close = () => { m.remove(); resolve(); };
+        m.querySelector('button').addEventListener('click', close);
+        m.addEventListener('click', (e) => { if (e.target === m) close(); });
+      });
+    }
+
+    function appConfirm(message, confirmLabel, cancelLabel) {
+      return new Promise(resolve => {
+        const m = document.createElement('div');
+        m.className = 'modal-back';
+        m.innerHTML = `<div class="modal-card">
+          <p style="white-space:pre-wrap; color:#444; text-align:center;">${escHtml(message)}</p>
+          <button class="btn" style="width:100%; margin-bottom:8px;" data-a="yes">${escHtml(confirmLabel || 'OK')}</button>
+          <button class="btn btn-secondary" style="width:100%;" data-a="no">${escHtml(cancelLabel || 'Cancel')}</button>
+        </div>`;
+        document.body.appendChild(m);
+        const finish = (val) => { m.remove(); resolve(val); };
+        m.querySelector('[data-a="yes"]').addEventListener('click', () => finish(true));
+        m.querySelector('[data-a="no"]').addEventListener('click', () => finish(false));
+      });
+    }
+
+    function appPrompt(message, defaultValue, placeholder) {
+      return new Promise(resolve => {
+        const m = document.createElement('div');
+        m.className = 'modal-back';
+        m.innerHTML = `<div class="modal-card">
+          <p style="white-space:pre-wrap; color:#444; text-align:center;">${escHtml(message)}</p>
+          <input type="text" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ccc; font-size:1rem; margin:10px 0; box-sizing:border-box;" value="${escHtml(defaultValue || '')}" placeholder="${escHtml(placeholder || '')}">
+          <button class="btn" style="width:100%; margin-bottom:8px;" data-a="ok">OK</button>
+          <button class="btn btn-secondary" style="width:100%;" data-a="cancel">Cancel</button>
+        </div>`;
+        document.body.appendChild(m);
+        const input = m.querySelector('input');
+        const finish = (val) => { m.remove(); resolve(val); };
+        m.querySelector('[data-a="ok"]').addEventListener('click', () => finish(input.value));
+        m.querySelector('[data-a="cancel"]').addEventListener('click', () => finish(null));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(input.value); } });
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+      });
     }
 
     function showPaymentModal() {
@@ -1804,7 +1858,7 @@
 
     async function approvePayment(studentUid) {
       if (!isAdmin) return;
-      if (!confirm('Confirm that this payment really arrived in the bank account?')) return;
+      if (!(await appConfirm('Confirm that this payment really arrived in the bank account?', 'Yes, approve', 'Cancel'))) return;
       try {
         await fb.setDoc(fb.doc(fb.db, 'users', studentUid), {
           hasPaidForLive: true,
@@ -1812,19 +1866,19 @@
         }, { merge: true });
         showInfoToast('✅', 'Approved', 'Now assign a teacher to this student.');
         renderPaymentRequests(); renderCompletedStudents(); renderPaidStudents();
-      } catch (e) { alert('Could not approve: ' + (e && e.message ? e.message : e)); }
+      } catch (e) { appAlert('Could not approve: ' + (e && e.message ? e.message : e)); }
     }
 
     async function rejectPayment(studentUid) {
       if (!isAdmin) return;
-      const reason = prompt('Reason (the student will see this). Leave empty for none:');
+      const reason = await appPrompt('Reason (the student will see this). Leave empty for none:');
       if (reason === null) return;
       try {
         await fb.setDoc(fb.doc(fb.db, 'users', studentUid), {
           payment: { status: 'rejected', rejectReason: reason.trim().slice(0, 120), rejectedAt: Date.now() }
         }, { merge: true });
         renderPaymentRequests();
-      } catch (e) { alert('Could not reject: ' + (e && e.message ? e.message : e)); }
+      } catch (e) { appAlert('Could not reject: ' + (e && e.message ? e.message : e)); }
     }
 
     async function teacherStartSession(studentUid, studentEmail) {
@@ -1833,7 +1887,7 @@
         if (!isAdmin) {
           const assigned = (studentSnap.exists() && studentSnap.data().assignedTeacher || '').toLowerCase();
           if (assigned !== (currentUser.email || '').toLowerCase()) {
-            alert('This student is not assigned to you. Ask the admin to assign them first.');
+            appAlert('This student is not assigned to you. Ask the admin to assign them first.');
             return;
           }
         }
@@ -1844,7 +1898,7 @@
         });
         openLiveQuranView(studentUid, true, studentEmail);
       } catch (e) {
-        alert('Could not start session: ' + (e && e.message ? e.message : e));
+        appAlert('Could not start session: ' + (e && e.message ? e.message : e));
       }
     }
 
@@ -1900,7 +1954,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
         }
       }
       }, (err) => {
-      alert('Live session sync failed: ' + (err && err.message ? err.message : err));
+      appAlert('Live session sync failed: ' + (err && err.message ? err.message : err));
     });
     }
 
@@ -2367,7 +2421,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
         await fb.setDoc(fb.doc(fb.db, 'content', 'main'), appData);
       } catch (e) {
         console.error('Failed to save structure:', e);
-        alert("Couldn't save changes. Check your internet connection and try again.");
+        appAlert("Couldn't save changes. Check your internet connection and try again.");
       }
     }
 
@@ -2375,32 +2429,32 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
       const schedule = document.getElementById('live-class-schedule').value.trim();
       appData.liveClass = { schedule };
       saveIndex();
-      alert('Saved!');
+      appAlert('Saved!');
     }
 
     // --- Manage Teachers (admin only) ---
     async function addTeacherEmail() {
       const input = document.getElementById('new-teacher-email');
       const email = (input.value || '').trim().toLowerCase();
-      if (!email || !email.includes('@')) { alert('Enter a valid email.'); return; }
+      if (!email || !email.includes('@')) { appAlert('Enter a valid email.'); return; }
       try {
         await fb.setDoc(fb.doc(fb.db, 'content', 'main'), { teacherEmails: fb.arrayUnion(email) }, { merge: true });
         input.value = '';
         renderTeacherManageList();
       } catch (e) {
         console.error('Failed to add teacher:', e);
-        alert("Couldn't add teacher — check your internet connection and try again.");
+        appAlert("Couldn't add teacher — check your internet connection and try again.");
       }
     }
 
     async function removeTeacherEmail(email) {
-      if (!confirm(`Remove ${email} from teachers?`)) return;
+      if (!(await appConfirm(`Remove ${email} from teachers?`, 'Yes, remove', 'Cancel'))) return;
       try {
         await fb.setDoc(fb.doc(fb.db, 'content', 'main'), { teacherEmails: fb.arrayRemove(email) }, { merge: true });
         renderTeacherManageList();
       } catch (e) {
         console.error('Failed to remove teacher:', e);
-        alert("Couldn't remove teacher — check your internet connection and try again.");
+        appAlert("Couldn't remove teacher — check your internet connection and try again.");
       }
     }
 
@@ -2508,7 +2562,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
     async function saveLessonQuestions(lessonId, questions) {
       const estimatedBytes = new Blob([JSON.stringify(questions)]).size;
       if (estimatedBytes > MAX_DOC_BYTES) {
-        alert(`This lesson's content is too large to save (${Math.round(estimatedBytes/1024)}KB). Try a smaller image, shorter audio, or split this into two lessons.`);
+        appAlert(`This lesson's content is too large to save (${Math.round(estimatedBytes/1024)}KB). Try a smaller image, shorter audio, or split this into two lessons.`);
         return false;
       }
       try {
@@ -2517,7 +2571,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
         return true;
       } catch (e) {
         console.error('Failed to save lesson questions:', e);
-        alert("Couldn't save this question. Check your internet connection and try again.");
+        appAlert("Couldn't save this question. Check your internet connection and try again.");
         return false;
       }
     }
@@ -2555,7 +2609,7 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
         URL.revokeObjectURL(url);
       } catch (e) {
         console.error('Backup failed:', e);
-        alert("Couldn't create the backup. Check your internet connection and try again.");
+        appAlert("Couldn't create the backup. Check your internet connection and try again.");
       } finally {
         btn.disabled = false;
         btn.innerText = originalLabel;
@@ -2635,13 +2689,13 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
       document.body.classList.toggle('live-mode', viewId === 'live-quran-view');
 
       if (viewId === 'admin-view' && !isAdmin) {
-        alert("በዚህ መለያ የአስተዳዳሪ መዳረሻ የለዎትም።");
+        appAlert("በዚህ መለያ የአስተዳዳሪ መዳረሻ የለዎትም።");
         document.getElementById('student-home').classList.add('active');
         document.getElementById('admin-view').classList.remove('active');
         return;
       }
       if (viewId === 'teacher-view' && !isTeacher) {
-        alert("በዚህ መለያ የመምህር መዳረሻ የለዎትም።");
+        appAlert("በዚህ መለያ የመምህር መዳረሻ የለዎትም።");
         document.getElementById('student-home').classList.add('active');
         document.getElementById('teacher-view').classList.remove('active');
         return;
@@ -2705,7 +2759,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
 
     async function seedDefaultAchievements() {
       if (ACHIEVEMENT_DEFS.length > 0) {
-        if (!confirm('There are already ' + ACHIEVEMENT_DEFS.length + ' achievements set up. Add the 5 starter ones anyway?')) return;
+        if (!(await appConfirm('There are already ' + ACHIEVEMENT_DEFS.length + ' achievements set up. Add the 5 starter ones anyway?', 'Yes, add them', 'Cancel'))) return;
       }
       for (const a of DEFAULT_ACHIEVEMENTS) {
         const newRef = fb.doc(fb.collection(fb.db, 'achievements'));
@@ -2775,8 +2829,8 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
       const ruleType = document.getElementById('ach-rule-type').value;
       const needsValue = ['lessons_at_least', 'xp_at_least', 'streak_at_least', 'checkpoints_at_least'].includes(ruleType);
       const ruleValue = needsValue ? parseInt(document.getElementById('ach-rule-value').value, 10) : null;
-      if (!icon || !title) { alert('Icon and title are required.'); return; }
-      if (needsValue && (!ruleValue || ruleValue < 1)) { alert('Enter a valid value.'); return; }
+      if (!icon || !title) { appAlert('Icon and title are required.'); return; }
+      if (needsValue && (!ruleValue || ruleValue < 1)) { appAlert('Enter a valid value.'); return; }
       const editId = document.getElementById('ach-edit-id').value;
       try {
         if (editId) {
@@ -2787,16 +2841,16 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
         }
         resetAchievementForm();
       } catch (e) {
-        alert('Could not save achievement: ' + (e && e.message ? e.message : e));
+        appAlert('Could not save achievement: ' + (e && e.message ? e.message : e));
       }
     }
 
     async function deleteAchievement(id) {
-      if (!confirm('Delete this achievement? Students who already earned it keep the record, but it will disappear from lists.')) return;
+      if (!(await appConfirm('Delete this achievement? Students who already earned it keep the record, but it will disappear from lists.', 'Yes, delete', 'Cancel'))) return;
       try {
         await fb.deleteDoc(fb.doc(fb.db, 'achievements', id));
       } catch (e) {
-        alert('Could not delete: ' + (e && e.message ? e.message : e));
+        appAlert('Could not delete: ' + (e && e.message ? e.message : e));
       }
     }
 
@@ -3159,7 +3213,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     function startMatchingGame(lessonMeta, allQuestions) {
       const MAX_PAIRS = 8;
       const usable = allQuestions.filter(q => q.symbol && q.correct);
-      if (usable.length < 2) { alert('ይህ ጨዋታ ለመጫወት በቂ ጥንዶች የሉትም (ቢያንስ 2 ያስፈልጋሉ)።'); return; }
+      if (usable.length < 2) { appAlert('ይህ ጨዋታ ለመጫወት በቂ ጥንዶች የሉትም (ቢያንስ 2 ያስፈልጋሉ)።'); return; }
 
       const chosen = shuffleArray(usable).slice(0, Math.min(MAX_PAIRS, usable.length));
       const pairs = chosen.map((q, i) => ({ pairId: q.id || ('p' + i), left: q.symbol, right: q.correct }));
@@ -3283,7 +3337,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
         userProgress.completedLessons = prevCompleted;
         userProgress.streakDates = prevStreakDates; userProgress.currentStreak = prevCurrentStreak;
         userProgress.longestStreak = prevLongestStreak; userProgress.achievements = prevAchievements;
-        alert("እድገትዎን ማስቀመጥ አልተቻለም — እባክዎ የኢንተርኔት ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ።");
+        appAlert("እድገትዎን ማስቀመጥ አልተቻለም — እባክዎ የኢንተርኔት ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ።");
         isFinishingLesson = false;
         showView('student-home');
         return;
@@ -3556,7 +3610,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
         userProgress.xp = prevXP; userProgress.completedLessons = prevCompleted; userProgress.checkpointScores = prevScores;
         userProgress.streakDates = prevStreakDates; userProgress.currentStreak = prevCurrentStreak;
         userProgress.longestStreak = prevLongestStreak; userProgress.achievements = prevAchievements;
-        alert("እድገትዎን ማስቀመጥ አልተቻለም — እባክዎ የኢንተርኔት ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ።");
+        appAlert("እድገትዎን ማስቀመጥ አልተቻለም — እባክዎ የኢንተርኔት ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ።");
         nextBtn.disabled = false;
         nextBtn.style.opacity = '1';
         isFinishingLesson = false;
@@ -3729,8 +3783,8 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     async function toggleReminder(on) {
       const r = getReminder();
       if (on) {
-        if (!('Notification' in window)) { alert('ይህ መሳሪያ ማሳወቂያዎችን አይደግፍም።'); on = false; }
-        else if ((await Notification.requestPermission()) !== 'granted') { alert('ማሳወቂያ አልተፈቀደም — በአሳሽ ቅንብር ውስጥ ይፍቀዱ።'); on = false; }
+        if (!('Notification' in window)) { appAlert('ይህ መሳሪያ ማሳወቂያዎችን አይደግፍም።'); on = false; }
+        else if ((await Notification.requestPermission()) !== 'granted') { appAlert('ማሳወቂያ አልተፈቀደም — በአሳሽ ቅንብር ውስጥ ይፍቀዱ።'); on = false; }
       }
       r.on = on; setReminder(r); initReminderUi();
     }
@@ -3820,11 +3874,11 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
       treeContainer.innerHTML = out;
     }
 
-    function saveLevel() {
+    async function saveLevel() {
       const id = document.getElementById('edit-level-id').value;
       const name = document.getElementById('new-level-name').value.trim();
       const videoUrl = document.getElementById('new-level-video').value.trim();
-      if (!name) return alert('Enter level name');
+      if (!name) return appAlert('Enter level name');
       if (id) { const lvl = appData.levels.find(l => l.id === id); if (lvl) { lvl.name = name; lvl.videoUrl = videoUrl; } }
       else { appData.levels.push({ id: uid('lvl'), name, videoUrl, lessons: [] }); }
       resetLevelForm();
@@ -3890,7 +3944,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     }
 
     async function deleteLevel(id) {
-      if (!confirm('Delete this level and all its lessons?')) return;
+      if (!(await appConfirm('Delete this level and all its lessons?', 'Yes, delete', 'Cancel'))) return;
       const lvl = appData.levels.find(l => l.id === id);
       if (lvl) { for (const les of lvl.lessons) { await fb.deleteDoc(fb.doc(fb.db, 'content', 'main', 'lessons', les.id)).catch(()=>{}); } }
       appData.levels = appData.levels.filter(l => l.id !== id);
@@ -3906,19 +3960,19 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
       }
     }
 
-    function saveLesson() {
+    async function saveLesson() {
       const id = document.getElementById('edit-lesson-id').value;
       const lvlId = document.getElementById('lesson-level-select').value;
       const title = document.getElementById('new-lesson-title').value.trim();
       const type = document.getElementById('new-lesson-type').value;
       const isCheckpoint = (type === 'matching' || type === 'placement') ? false : document.getElementById('new-lesson-checkpoint').checked;
       const shuffleQuestions = document.getElementById('new-lesson-shuffle').checked;
-      if (!title) return alert('Enter lesson title');
+      if (!title) return appAlert('Enter lesson title');
 
       if (id) {
         appData.levels.forEach(l => { const les = l.lessons.find(s => s.id === id); if (les) { les.title = title; les.type = type; les.isCheckpoint = isCheckpoint; les.passThreshold = (type === 'placement' ? 90 : 85); les.shuffleQuestions = shuffleQuestions; } });
       } else {
-        if (!lvlId) return alert('Create a level first, then select it here.');
+        if (!lvlId) return appAlert('Create a level first, then select it here.');
         const level = appData.levels.find(l => l.id === lvlId);
         if (level) level.lessons.push({ id: uid('les'), title, type, isCheckpoint, passThreshold: (type === 'placement' ? 90 : 85), shuffleQuestions });
       }
@@ -3952,7 +4006,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     }
 
     async function deleteLesson(id) {
-      if (!confirm('Delete this lesson?')) return;
+      if (!(await appConfirm('Delete this lesson?', 'Yes, delete', 'Cancel'))) return;
       appData.levels.forEach(l => { l.lessons = l.lessons.filter(les => les.id !== id); });
       await fb.deleteDoc(fb.doc(fb.db, 'content', 'main', 'lessons', id)).catch(()=>{});
       delete lessonQuestionsCache[id];
@@ -3993,21 +4047,21 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
       const audioFile = document.getElementById('q-audio-file').files[0];
       const audioRemoved = document.getElementById('q-audio-removed').value === '1';
 
-      if (!targetLesId) return alert('Create a lesson first, then select it here.');
+      if (!targetLesId) return appAlert('Create a lesson first, then select it here.');
       const targetMeta = findLessonMeta(targetLesId);
       const isMatchingLesson = targetMeta && targetMeta.type === 'matching';
 
-      if (!correct) return alert('Please fill in the correct/matching answer field.');
+      if (!correct) return appAlert('Please fill in the correct/matching answer field.');
       let options = [];
       if (isMatchingLesson) {
-        if (!symbol) return alert('For a Matching Game, please fill in the Symbol field too — every pair needs both sides.');
+        if (!symbol) return appAlert('For a Matching Game, please fill in the Symbol field too — every pair needs both sides.');
         options = [correct]; // not used for gameplay, kept only so old quiz-shaped code doesn't choke
       } else {
-        if (!optionsRaw) return alert('Please fill in options and correct answer fields.');
+        if (!optionsRaw) return appAlert('Please fill in options and correct answer fields.');
         options = optionsRaw.split(',').map(s => s.trim()).filter(s => s !== '');
-        if (options.length < 2) return alert('Please provide at least 2 answer choices.');
+        if (options.length < 2) return appAlert('Please provide at least 2 answer choices.');
         if (!options.some(o => o.toLowerCase() === correct.toLowerCase())) {
-          return alert(`The correct answer ("${correct}") must exactly match one of the answer choices: ${options.join(', ')}`);
+          return appAlert(`The correct answer ("${correct}") must exactly match one of the answer choices: ${options.join(', ')}`);
         }
       }
 
@@ -4021,7 +4075,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
         // Pull the existing question out of its original lesson...
         const originalQuestions = await fetchLessonQuestions(originalLesId);
         const existing = originalQuestions.find(item => item.id === qId);
-        if (!existing) return alert("Couldn't find the original question to move — it may have been deleted elsewhere. Refresh and try again.");
+        if (!existing) return appAlert("Couldn't find the original question to move — it may have been deleted elsewhere. Refresh and try again.");
 
         const updatedQuestion = {
           ...existing, symbol, options, correct, goodTime,
@@ -4143,7 +4197,7 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     }
 
     async function deleteQuestion(lesId, qId) {
-      if (!confirm('Delete this question?')) return;
+      if (!(await appConfirm('Delete this question?', 'Yes, delete', 'Cancel'))) return;
       const questions = (lessonQuestionsCache[lesId] || []).filter(q => q.id !== qId);
       const saved = await saveLessonQuestions(lesId, questions);
       if (saved) renderAdminPanel();
