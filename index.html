@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js" defer></script>
   <style>
     :root {
       --primary: #2E7D4F;
@@ -150,7 +150,7 @@
     .checkpoint-banner { background: linear-gradient(135deg, #FFF3E0, #FFE0B2); color: #B45309; padding: 8px 14px; border-radius: 10px; font-weight: bold; font-size: 0.85rem; margin-bottom: 12px; }
     .big-symbol-box { background: linear-gradient(160deg, #FFFDF7, #FBF3DE); border: 2px dashed var(--gold); border-radius: 20px; padding: 20px; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 20px; position: relative; box-shadow: inset 0 2px 6px rgba(0,0,0,0.03); }
     .big-symbol { font-size: 5.5rem; font-weight: bold; color: #222; text-shadow: 0 4px 12px rgba(0,0,0,0.12); }
-    .symbol-img { max-width: 100%; max-height: 150px; border-radius: 8px; object-fit: contain; }
+    .symbol-img { width: 100%; max-width: 280px; height: 160px; border-radius: 12px; object-fit: contain; background: linear-gradient(160deg, #FFF8EA, #FBECC9); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
     .audio-btn { background: #E3F2FD; color: #1976D2; border: none; padding: 12px 24px; border-radius: 30px; font-size: 1rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; }
 
     .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
@@ -801,6 +801,13 @@
   body.dark-mode .big-symbol-box {
     background: linear-gradient(160deg, var(--card-bg), #151515) !important;
     border-color: #665420 !important;
+  }
+
+  /* Image frame inside the letter card: keep it a soft fill in dark mode too,
+     instead of the bright cream showing through. */
+  body.dark-mode .symbol-img {
+    background: linear-gradient(160deg, #2a2a2a, #1c1c1c) !important;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08) !important;
   }
 
   /* Correct/wrong answer flash: the pale green/red was too bright against the dark UI */
@@ -1454,11 +1461,21 @@
     const EMAILJS_TEMPLATE_ID = "template_61tm9zk";
     const ADMIN_NOTIFY_EMAIL = "mohammedseidmusteffa@gmail.com";
 
-    if (window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
-      emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    // emailjs.js now loads with `defer` (so it doesn't block the page from
+    // rendering on a slow connection), which means it may not exist yet the
+    // moment this script runs. So we initialize it lazily, right before the
+    // first time we actually need to send an email, instead of at page load.
+    let emailjsInitialized = false;
+    function ensureEmailJsInit() {
+      if (emailjsInitialized) return;
+      if (window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
+        emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+        emailjsInitialized = true;
+      }
     }
 
     function sendCompletionEmail(studentEmail, studentName) {
+      ensureEmailJsInit();
       if (!window.emailjs || EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") {
         console.warn('EmailJS not configured yet — skipping completion email.');
         return;
@@ -2423,9 +2440,13 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
       box.innerHTML = '';
     }
 
+    let contentLoadFailed = false;
+    let contentLoadTimeoutSet = false;
+
     function listenToContentIndex() {
       const ref = fb.doc(fb.db, 'content', 'main');
       unsubContent = fb.onSnapshot(ref, async (snap) => {
+        contentLoadFailed = false;
         if (!snap.exists()) {
           await fb.setDoc(ref, defaultIndex);
           for (const lid of Object.keys(defaultLessonQuestions)) {
@@ -2444,7 +2465,21 @@ unsubLiveSession = fb.onSnapshot(fb.doc(fb.db, 'liveSessions', studentUid), asyn
         }
         if (document.getElementById('student-home').classList.contains('active')) renderStudentHome();
         if (document.getElementById('lessons-view').classList.contains('active')) renderLessonsView();
+      }, (err) => {
+        // Without this, a dropped connection or a slow/failed first fetch left the
+        // Lessons screen permanently blank with no explanation and no way to recover
+        // short of force-closing the app.
+        console.error('Content listener failed:', err);
+        contentLoadFailed = true;
+        if (document.getElementById('lessons-view').classList.contains('active')) renderLessonsView();
       });
+    }
+
+    function retryLoadContent() {
+      contentLoadFailed = false;
+      if (unsubContent) { try { unsubContent(); } catch (e) {} }
+      listenToContentIndex();
+      renderLessonsView();
     }
 
     async function saveIndex() {
@@ -3094,6 +3129,33 @@ const MASCOT_IMAGES = { boy: {}, girl: {} };
     function renderLessonsView() {
       const container = document.getElementById('levels-container');
       container.innerHTML = '';
+
+      if (!appData.levels || appData.levels.length === 0) {
+        const msg = document.createElement('div');
+        msg.style.cssText = 'text-align:center; padding:50px 20px; color:#888;';
+        msg.innerHTML = contentLoadFailed
+          ? `<div style="font-size:2.5rem; margin-bottom:10px;">📡</div>
+             <p style="margin:0 0 14px;">ትምህርቶችን መጫን አልተቻለም — እባክዎ ኢንተርኔትዎን ያረጋግጡ።</p>
+             <button class="btn" onclick="retryLoadContent()">🔄 እንደገና ሞክር</button>`
+          : `<div style="font-size:2.5rem; margin-bottom:10px;">⏳</div>
+             <p style="margin:0;">በመጫን ላይ...</p>`;
+        container.appendChild(msg);
+        // If it's still stuck on "loading" after a while with no data and no error
+        // (a hung connection rather than a clean failure), surface the retry button
+        // instead of leaving the screen stuck forever.
+        if (!contentLoadFailed && !contentLoadTimeoutSet) {
+          contentLoadTimeoutSet = true;
+          setTimeout(() => {
+            contentLoadTimeoutSet = false;
+            if ((!appData.levels || appData.levels.length === 0) && document.getElementById('lessons-view').classList.contains('active')) {
+              contentLoadFailed = true;
+              renderLessonsView();
+            }
+          }, 8000);
+        }
+        return;
+      }
+
       let previousLessonCleared = true, nodeIdx = 0;
 
       appData.levels.forEach((level) => {
